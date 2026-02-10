@@ -144,7 +144,7 @@ export default function AgentChat() {
                   >
                     <p className="text-sm">{msg.content}</p>
                     <span className="text-xs opacity-60">
-                      {msg.timestamp.toLocaleTimeString()}
+                      {new Date(msg.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
                 </div>

@@ -1,21 +1,53 @@
-import { checkConflict } from "./conflictDetector";
+import { detectConflicts } from "./conflictDetector";
 
-export function assign(pilot, drone, mission) {
+export interface ReassignmentOption {
+  pilotId: string;
+  missionId: string;
+  reason: string;
+  conflictsResolved: string[];
+}
 
-  const conflict = checkConflict(pilot, drone, mission);
+/**
+ * Generate immediate reassignment options
+ */
+export function generateReassignmentOptions(
+  mission: any,
+  pilots: any[],
+  drones: any[]
+): ReassignmentOption[] {
+  const options: ReassignmentOption[] = [];
 
-  if (conflict) {
-    return { success: false, reason: conflict };
+  for (const pilot of pilots) {
+    if (pilot.status === "available") {
+      const conflict = detectConflicts(pilot, drones[0], mission);
+
+      if (!conflict) {
+        options.push({
+          pilotId: pilot.id,
+          missionId: mission.id,
+          reason: "Suitable replacement",
+          conflictsResolved: ["Availability", "Location"],
+        });
+      }
+    }
   }
 
-  pilot.status = "Busy";
-  drone.status = "Deployed";
-
-  return { success: true };
+  return options;
 }
-export function findBackup(mission, pilots) {
-  return pilots.filter(p =>
-    p.status === "Available" &&
-    p.skills.includes(mission.skill)
-  );
+
+/**
+ * Analyze cascade reassignment options
+ */
+export function analyzeCascadeReassignments(
+  mission: any,
+  pilots: any[]
+): ReassignmentOption[] {
+  return pilots
+    .filter((p) => p.status === "available")
+    .map((p) => ({
+      pilotId: p.id,
+      missionId: mission.id,
+      reason: "Backup pilot",
+      conflictsResolved: ["Workload balancing"],
+    }));
 }

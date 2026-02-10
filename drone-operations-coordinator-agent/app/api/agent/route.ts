@@ -1,186 +1,134 @@
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { handleQuery } from "@/lib/agentCore";
+import { NextResponse } from "next/server";
 
-import {
-  samplePilots,
-  sampleDrones,
-} from '@/lib/sheets-service';
-import {
-  detectConflicts,
-  findAvailablePilots,
-  findAvailableDrones,
-  generateReassignmentOptions,
-  analyzeCascadeReassignments,
-} from '@/lib/agent-logic';
+import fs from "fs";
+import path from "path";
+import Papa from "papaparse";
 
-// Initialize OpenAI with Vercel AI Gateway
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  baseURL: 'https://api.vercel.ai/openai/v1',
-});
+// ---------- CSV Loader ----------
 
-// Sample projects for demonstration
-const sampleProjects = [
-  {
-    id: 'PROJ-001',
-    name: 'Project Alpha',
-    requiredSkillLevel: 'advanced' as const,
-    requiredCertifications: ['Commercial', 'Part 107'],
-    requiredDroneCapabilities: ['4K Video', 'LiDAR'],
-    requiredLocation: 'Los Angeles, CA',
-    startDate: '2025-02-10',
-    endDate: '2025-02-17',
-    assignedPilot: 'P002',
-    assignedDrone: 'D001',
-    status: 'active' as const,
-  },
-  {
-    id: 'PROJ-002',
-    name: 'Project Beta',
-    requiredSkillLevel: 'intermediate' as const,
-    requiredCertifications: ['Part 107'],
-    requiredDroneCapabilities: ['4K Video'],
-    requiredLocation: 'San Francisco, CA',
-    startDate: '2025-02-20',
-    endDate: '2025-02-25',
-    assignedPilot: undefined,
-    assignedDrone: undefined,
-    status: 'pending' as const,
-  },
-];
+function loadCSV(name: string) {
+  const filePath = path.join(process.cwd(), "data", name);
+  const file = fs.readFileSync(filePath, "utf8");
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
+  return Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+  }).data;
 }
 
-interface AgentRequest {
-  messages: Message[];
-  action?: string;
-}
+// ---------- GET: Fetch Data ----------
 
-export async function POST(request: Request) {
+export async function GET() {
   try {
-    const { messages, action }: AgentRequest = await request.json();
+    const pilots = loadCSV("pilot_roster.csv");
+    const drones = loadCSV("drone_fleet.csv");
+    const missions = loadCSV("missions.csv");
 
-    if (!messages || messages.length === 0) {
-      return Response.json(
-        { error: 'No messages provided' },
-        { status: 400 },
-      );
-    }
+    return NextResponse.json({
+      pilots,
+      drones,
+      missions,
+    });
+  } catch (err) {
+    console.error(err);
 
-    // Get current state
-    const pilots = samplePilots;
-    const drones = sampleDrones;
-    const projects = sampleProjects;
-    const conflicts = detectConflicts(pilots, drones, projects);
+    return NextResponse.json(
+      { error: "Failed to load CSV data" },
+      { status: 500 }
+    );
+  }
+}
 
-    // Build context for the agent
-    const systemPrompt = `You are an expert Drone Operations Coordinator AI Agent for Skylark Drones. Your role is to help coordinate pilots, drones, and projects, manage assignments, and resolve conflicts.
+// ---------- POST: Chat / Agent ----------
 
-CURRENT STATE:
-${JSON.stringify({ pilots, drones, projects, conflicts }, null, 2)}
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const message = body.message;
 
-AVAILABLE ACTIONS:
-1. Query pilot availability by skill, certification, or location
-2. View current assignments and project status
-3. Update pilot status (Available/On Leave/Unavailable)
-4. Match pilots to projects based on requirements
-5. Detect and resolve scheduling conflicts
-6. Suggest urgent reassignments (both immediate replacement and cascade strategies)
-7. Track drone fleet status and maintenance
-8. Alert on skill/equipment mismatches
-
-CONFLICT DETECTION:
-- Double-booking: ${conflicts.filter((c) => c.type === 'double-booking').length} detected
-- Skill mismatches: ${conflicts.filter((c) => c.type === 'skill-mismatch').length} detected
-- Equipment issues: ${conflicts.filter((c) => c.type === 'equipment-mismatch').length} detected
-- Maintenance conflicts: ${conflicts.filter((c) => c.type === 'maintenance-conflict').length} detected
-- Location mismatches: ${conflicts.filter((c) => c.type === 'location-mismatch').length} detected
-
-When responding:
-- Be precise and conversational
-- Reference specific pilot/drone/project names
-- Suggest solutions for conflicts
-- Consider location, skills, certifications, and drone capabilities
-- Flag any data that needs to sync back to Google Sheets
-- When suggesting reassignments, provide reasoning
-- For urgent reassignments, offer both immediate replacement and cascade options
-
-If the user asks to update a pilot status or assignment, you should suggest this action and explain what will be synced back to the Google Sheets.`;
-
-    // Handle specific agent actions
-    if (action === 'detect-conflicts') {
-      const conflictSummary = conflicts.map((c) => ({
-        type: c.type,
-        severity: c.severity,
-        description: c.description,
-        resolution: c.suggestedResolution,
-      }));
-
-      return Response.json({
-        response: `Found ${conflicts.length} conflicts:\n${JSON.stringify(conflictSummary, null, 2)}`,
-        conflicts: conflictSummary,
-        data: { pilots, drones, projects, conflicts },
+    if (!message) {
+      return NextResponse.json({
+        reply: "Please send a valid message.",
       });
     }
 
-    if (action === 'find-pilot') {
-      const userMessage = messages[messages.length - 1].content;
-      const availablePilots = findAvailablePilots(pilots, {
-        skillLevel: 'advanced',
-        certifications: [],
-      });
+    // Load data
+    const pilots = loadCSV("pilot_roster.csv");
+    const drones = loadCSV("drone_fleet.csv");
+    const missions = loadCSV("missions.csv");
 
-      return Response.json({
-        response: `Found ${availablePilots.length} available pilots: ${availablePilots.map((p) => p.name).join(', ')}`,
-        pilots: availablePilots,
-      });
+    let reply = "I'm not sure how to help with that yet.";
+
+    // Normalize text
+    const msg = message.toLowerCase();
+
+    // ---- PILOTS ----
+    if (
+      msg.includes("pilot") ||
+      msg.includes("pilots") ||
+      msg.includes("crew")
+    ) {
+      const available = pilots.filter(
+      (p: any) =>
+        String(p.status).toLowerCase() === "available"
+    );
+
+
+      reply = `There are ${available.length} available pilots out of ${pilots.length}.`;
     }
 
-    if (action === 'reassignment-options') {
-      const immediateOptions = generateReassignmentOptions(
-        pilots,
-        drones,
-        conflicts,
-        true,
-      );
-      const cascadeOptions = analyzeCascadeReassignments(
-        pilots,
-        drones,
-        projects,
-      );
-
-      return Response.json({
-        response: `Immediate replacement options: ${immediateOptions.length}\nCascade reassignment options: ${cascadeOptions.length}`,
-        immediateOptions,
-        cascadeOptions,
-      });
+    // ---- DRONES ----
+    else if (
+      msg.includes("drone") ||
+      msg.includes("drones") ||
+      msg.includes("uav")
+    ) {
+      reply = `There are ${drones.length} drones in the fleet.`;
     }
 
-    // Default: Use AI to process natural language
-    const result = await generateText({
-      model: openai('gpt-4-turbo'),
-      system: systemPrompt,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-      maxTokens: 1000,
-      temperature: 0.7,
+    // ---- MISSIONS ----
+    else if (
+      msg.includes("mission") ||
+      msg.includes("missions") ||
+      msg.includes("project")
+    ) {
+      reply = `There are ${missions.length} missions currently registered.`;
+    }
+
+    // ---- REASSIGNMENT ----
+    else if (
+      msg.includes("reassign") ||
+      msg.includes("urgent") ||
+      msg.includes("replace") ||
+      msg.includes("emergency")
+    ) {
+      reply =
+        "Check the Reassignment tab to view available backup pilots and drones.";
+    }
+
+    // ---- HELP ----
+    else if (
+      msg.includes("help") ||
+      msg.includes("support") ||
+      msg.includes("what can you do")
+    ) {
+      reply =
+        "You can ask me about pilots, drones, missions, conflicts, or reassignment options.";
+    }
+
+    // ✅ IMPORTANT: RETURN
+    return NextResponse.json({
+      reply,
     });
 
-    return Response.json({
-      response: result.text,
-      data: { pilots, drones, projects, conflicts },
-    });
-  } catch (error) {
-    console.error('[v0] Agent error:', error);
-    return Response.json(
-      { error: 'Failed to process agent request' },
-      { status: 500 },
+  } catch (err) {
+    console.error("Agent POST error:", err);
+
+    return NextResponse.json(
+      {
+        reply: "Agent encountered an internal error.",
+      },
+      { status: 500 }
     );
   }
 }

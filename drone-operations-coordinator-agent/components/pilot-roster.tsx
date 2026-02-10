@@ -1,9 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+
 import {
   Table,
   TableBody,
@@ -12,8 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import { Users } from 'lucide-react';
-import { samplePilots } from '@/lib/sheets-service';
 import { Pilot } from '@/lib/types';
 
 const statusColors: Record<string, string> = {
@@ -30,24 +39,59 @@ const skillColors: Record<string, string> = {
 };
 
 export default function PilotRoster() {
-  const [pilots, setPilots] = useState<Pilot[]>(samplePilots);
+  const [pilots, setPilots] = useState<Pilot[]>([]);
   const [selectedPilot, setSelectedPilot] = useState<Pilot | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Load data from API
+  useEffect(() => {
+    fetch(`${window.location.origin}/api/agent`)
+
+      .then((res) => res.json())
+      .then((data) => {
+        setPilots(data.pilots || []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Failed to load pilots:', err);
+        setLoading(false);
+      });
+  }, []);
 
   const handleStatusChange = (pilotId: string, newStatus: Pilot['status']) => {
     setPilots((prev) =>
-      prev.map((p) => (p.id === pilotId ? { ...p, status: newStatus } : p)),
+      prev.map((p) =>
+        p.id === pilotId ? { ...p, status: newStatus } : p
+      )
     );
   };
 
-  const availableCount = pilots.filter((p) => p.status === 'available').length;
-  const onLeaveCount = pilots.filter((p) => p.status === 'on-leave').length;
-  const unavailableCount = pilots.filter((p) => p.status === 'unavailable')
-    .length;
+  const availableCount = pilots.filter(
+    (p) => p.status === 'available'
+  ).length;
+
+  const onLeaveCount = pilots.filter(
+    (p) => p.status === 'on-leave'
+  ).length;
+
+  const unavailableCount = pilots.filter(
+    (p) => p.status === 'unavailable'
+  ).length;
+
+  if (loading) {
+    return (
+      <div className="text-slate-300 p-4">
+        Loading pilots...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
+
       {/* Summary Stats */}
       <div className="grid grid-cols-3 gap-4">
+
         <Card className="border-green-900 bg-green-950">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-green-200">
@@ -60,6 +104,7 @@ export default function PilotRoster() {
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-yellow-900 bg-yellow-950">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-yellow-200">
@@ -72,6 +117,7 @@ export default function PilotRoster() {
             </div>
           </CardContent>
         </Card>
+
         <Card className="border-red-900 bg-red-950">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-red-200">
@@ -84,42 +130,54 @@ export default function PilotRoster() {
             </div>
           </CardContent>
         </Card>
+
       </div>
 
       {/* Pilots Table */}
       <Card className="border-slate-700 bg-slate-800">
+
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-white">
             <Users className="h-5 w-5 text-blue-400" />
             Pilot Roster
           </CardTitle>
+
           <CardDescription className="text-slate-400">
             {pilots.length} total pilots
           </CardDescription>
         </CardHeader>
+
         <CardContent>
+
           <div className="overflow-x-auto">
+
             <Table>
+
               <TableHeader>
                 <TableRow className="border-slate-700 hover:bg-slate-800">
                   <TableHead className="text-slate-300">Name</TableHead>
-                  <TableHead className="text-slate-300">Skill Level</TableHead>
-                  <TableHead className="text-slate-300">Certifications</TableHead>
+                  <TableHead className="text-slate-300">Skill</TableHead>
+                  <TableHead className="text-slate-300">Certs</TableHead>
                   <TableHead className="text-slate-300">Location</TableHead>
                   <TableHead className="text-slate-300">Status</TableHead>
                   <TableHead className="text-slate-300">Assignment</TableHead>
                   <TableHead className="text-slate-300">Actions</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
-                {pilots.map((pilot) => (
+
+                {pilots.map((pilot, index) => (
                   <TableRow
-                    key={pilot.id}
+                    key={pilot.id || index}
+
                     className="border-slate-700 hover:bg-slate-700"
                   >
+
                     <TableCell className="font-medium text-white">
                       {pilot.name}
                     </TableCell>
+
                     <TableCell>
                       <Badge
                         variant="outline"
@@ -128,9 +186,14 @@ export default function PilotRoster() {
                         {pilot.skillLevel}
                       </Badge>
                     </TableCell>
+
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {pilot.certifications.map((cert) => (
+                        {(pilot.certifications || '')
+                        .split(',')
+                        .map((cert: string) => cert.trim())
+                        .filter(Boolean)
+                        .map((cert) => (
                           <Badge
                             key={cert}
                             variant="secondary"
@@ -141,9 +204,11 @@ export default function PilotRoster() {
                         ))}
                       </div>
                     </TableCell>
+
                     <TableCell className="text-slate-300">
                       {pilot.currentLocation}
                     </TableCell>
+
                     <TableCell>
                       <Badge
                         variant="outline"
@@ -152,31 +217,35 @@ export default function PilotRoster() {
                         {pilot.status}
                       </Badge>
                     </TableCell>
+
                     <TableCell className="text-slate-300">
                       {pilot.currentAssignment ? (
-                        <Badge variant="secondary" className="bg-blue-900 text-blue-200">
+                        <Badge className="bg-blue-900 text-blue-200">
                           {pilot.currentAssignment}
                         </Badge>
                       ) : (
                         <span className="text-slate-500">—</span>
                       )}
                     </TableCell>
+
                     <TableCell>
+
                       {pilot.status === 'available' && (
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-slate-600 text-slate-200 hover:bg-slate-700 text-xs bg-transparent"
+                          className="border-slate-600 text-slate-200 text-xs"
                           onClick={() => setSelectedPilot(pilot)}
                         >
                           Assign
                         </Button>
                       )}
+
                       {pilot.status !== 'available' && (
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-green-600 text-green-300 hover:bg-green-950 text-xs bg-transparent"
+                          className="border-green-600 text-green-300 text-xs"
                           onClick={() =>
                             handleStatusChange(pilot.id, 'available')
                           }
@@ -184,14 +253,23 @@ export default function PilotRoster() {
                           Mark Available
                         </Button>
                       )}
+
                     </TableCell>
+
                   </TableRow>
+
                 ))}
+
               </TableBody>
+
             </Table>
+
           </div>
+
         </CardContent>
+
       </Card>
+
     </div>
   );
 }
