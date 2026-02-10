@@ -1,5 +1,7 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { handleQuery } from "@/lib/agentCore";
+
 import {
   samplePilots,
   sampleDrones,

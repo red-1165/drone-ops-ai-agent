@@ -322,3 +322,14 @@ For questions or issues:
 2. Review sample data in `/lib/sheets-service.ts`
 3. Test conflict detection in `/lib/agent-logic.ts`
 4. Trace AI responses in `/app/api/agent/route.ts`
+## Architecture
+
+Frontend (Next.js)
+   ↓
+API Route
+   ↓
+Agent Core
+   ↓
+Assignment Engine
+   ↓
+CSV / Sheets
